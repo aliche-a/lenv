@@ -8,3 +8,4 @@ authors = ["Alice Chen <alice.chen.500@gmail.com>"]
 
 [dependencies]
 clap = { version = "3.1.8", features = ["derive"] }
+gtmpl = "0.7"

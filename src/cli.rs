@@ -2,8 +2,7 @@ use clap::{Parser, Subcommand};
 use crate::list;
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
-#[clap(propagate_version = true)]
+#[clap(author, version, about, long_about = None, propagate_version = true)]
 pub struct Cli {
     #[clap(subcommand)]
     command: Commands,
@@ -13,6 +12,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// List contents of current directory
+    #[clap(visible_alias = "ls")]
     List(list::ListArgs),
     /// Create a file
     Touch {
@@ -28,6 +28,7 @@ impl Cli {
         match &self.command {
             Commands::List(args) => {
                 println!("List called: {:?}", args);
+                args.run();
             }
             Commands::Touch { name } => {
                 println!("Touch command called with name: {:?}.", *name);
