@@ -1,5 +1,5 @@
-use clap::{Parser, Subcommand};
 use crate::list;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None, propagate_version = true)]
@@ -27,7 +27,6 @@ impl Cli {
     pub fn exec(&self) {
         match &self.command {
             Commands::List(args) => {
-                println!("List called: {:?}", args);
                 args.run();
             }
             Commands::Touch { name } => {
