@@ -46,7 +46,14 @@ pub struct ListArgs {
 impl ListArgs {
     /// run is the entry point into the command; runs the internal list method to perform the operation
     /// If any errors occur, they get returned immediately for run to handle/unwrap
-    pub fn run(&self) -> Result<String> {
+    pub fn run(&self) {
+        match self.list() {
+            Ok(contents) => println!("{}", contents),
+            Err(err) => eprintln!("Failed to list contents: {}", err),
+        }
+    }
+
+    fn list(&self) -> Result<String> {
         // Read the contents of the given directory.
         // Borrow the value from self, so it doesn't get moved into read_dir
         let mut entries: Vec<DirEntry> = fs::read_dir(&self.dir)
@@ -92,9 +99,7 @@ impl ListArgs {
                 .as_bytes()
                 .first()
             {
-                Some(byte) => {
-                    *byte != b'.'
-                },
+                Some(byte) => *byte != b'.',
                 None => false,
             }
         })
@@ -110,7 +115,7 @@ mod tests {
         let args = default_args();
         assert_eq!(
             "hello.txt\nworld.txt\n",
-            args.run().unwrap()
+            args.list().unwrap()
         );
     }
 
@@ -120,7 +125,7 @@ mod tests {
         args.all = true;
         assert_eq!(
             ".hidden\n.no\nhello.txt\nworld.txt\n",
-            args.run().unwrap()
+            args.list().unwrap()
         );
     }
 
