@@ -67,7 +67,7 @@ impl ListArgs {
             .collect();
 
         if !self.all {
-            self.no_hidden_files(&mut entries)
+            self.remove_hidden_files(&mut entries)
         }
 
         let mut contents = Vec::new();
@@ -92,7 +92,15 @@ impl ListArgs {
         Ok(result)
     }
 
-    fn no_hidden_files(&self, entries: &mut Vec<DirEntry>) {
+    /// Filters out the hidden entries from the result.
+    /// Hidden files are determined by examining each entry's filename;
+    /// if the first character is a '.', it is removed by retain().
+    // The first byte of the file name is compared to the byte representation 
+    // of '.' since this how Rust deals with strings.
+    // Comparing by bytes also ensures that converting the file name (OsString)
+    // won't potentially error out as with to_string(), which fails if
+    // the OsString doesn't contain valid UTF-8 codes.
+    fn remove_hidden_files(&self, entries: &mut Vec<DirEntry>) {
         entries.retain(|entry| {
             match entry
                 .file_name()
