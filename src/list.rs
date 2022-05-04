@@ -1,5 +1,10 @@
 use clap::Args;
-use std::{error, fs, result};
+use std::{
+    error,
+    fs::{self, DirEntry},
+    os::unix::prelude::OsStrExt,
+    result,
+};
 
 const TEMPLATE: &str = r#"
 {{- range . -}}
@@ -39,50 +44,60 @@ pub struct ListArgs {
 }
 
 impl ListArgs {
-    pub fn run(&self) {
-        match self.default_list() {
-            Ok(contents) => println!("{}", contents),
-            Err(e) => eprintln!("Error printing contents: {}", e),
-        };
-    }
-
-    /// Default behavior; builds the output for the contents of current or given directory.
-    /// If any errors occur, immediately return it to run so run can handle/wrap it
-    fn default_list(&self) -> Result<String> {
-        // Error: after processing in filter_map, we tried to use the result,
-        // which was owned by a temporary variable created in the scope.
-        // So create a new vector to hold the file names after processing.
-        let mut file_names = Vec::new();
-
+    /// run is the entry point into the command; runs the internal list method to perform the operation
+    /// If any errors occur, they get returned immediately for run to handle/unwrap
+    pub fn run(&self) -> Result<String> {
         // Read the contents of the given directory.
         // Borrow the value from self, so it doesn't get moved into read_dir
-        let files = fs::read_dir(&self.dir)
-            // Unwrap to get the ReadDir iterator from the result
-            .unwrap()
+        let mut entries: Vec<DirEntry> = fs::read_dir(&self.dir)
+            // Expect to get the ReadDir iterator from the result,
+            // printing the error if we get one with the msg for context
+            .expect("Error reading directory")
             // Filter and process each entry in the iterator,
             // returning only file name of each Ok variant.
             // The return needs to be wrapped in an Option because of the iterator(?)
-            .filter_map(|path| match path {
-                Ok(p) => Some(p.file_name()),
-                Err(_) => None,
-            });
+            .filter_map(|path| path.ok())
+            .collect();
 
+        if !self.all {
+            self.no_hidden_files(&mut entries)
+        }
+
+        let mut contents = Vec::new();
         // Error: Vec<OsString> cannot be used with template.
         // So we convert each OsString into String and push all valid strings
         // into file_names, which gives us the Vec<String> we need for template.
-        for file in files {
-            if let Ok(name) = file.into_string() {
-                file_names.push(name)
+        for entry in entries {
+            if let Ok(name) = entry
+                .file_name()
+                .into_string()
+            {
+                contents.push(name)
             }
         }
 
         // Sort the results so we have a consistent output
-        file_names.sort();
+        contents.sort();
 
         // Now that we have a Vec<String>, which will work with template,
         // we can pass it to the function for rendering
-        let contents = gtmpl::template(TEMPLATE, file_names)?;
-        Ok(contents)
+        let result = gtmpl::template(TEMPLATE, contents)?;
+        Ok(result)
+    }
+
+    fn no_hidden_files(&self, entries: &mut Vec<DirEntry>) {
+        entries.retain(|entry| {
+            match entry
+                .file_name()
+                .as_bytes()
+                .first()
+            {
+                Some(byte) => {
+                    *byte != b'.'
+                },
+                None => false,
+            }
+        })
     }
 }
 
@@ -93,7 +108,20 @@ mod tests {
     #[test]
     fn list_curr_dir() {
         let args = default_args();
-        assert_eq!("hello.txt\nworld.txt\n", args.default_list().unwrap());
+        assert_eq!(
+            "hello.txt\nworld.txt\n",
+            args.run().unwrap()
+        );
+    }
+
+    #[test]
+    fn list_curr_dir_hidden() {
+        let mut args = default_args();
+        args.all = true;
+        assert_eq!(
+            ".hidden\n.no\nhello.txt\nworld.txt\n",
+            args.run().unwrap()
+        );
     }
 
     // helper function to create default args that tests will use and
