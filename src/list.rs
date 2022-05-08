@@ -1,8 +1,9 @@
 use clap::Args;
 use std::{
     error,
+    fmt::Write,
     fs::{self, DirEntry},
-    os::unix::prelude::OsStrExt,
+    os::unix::prelude::{OsStrExt, PermissionsExt},
     result,
 };
 
@@ -12,10 +13,18 @@ const TEMPLATE: &str = r#"
 {{- end -}}
 "#;
 
+const RWX: char = '7';
+const RW: char = '6';
+const RX: char = '5';
+const READ: char = '4';
+const WX: char = '3';
+const WRITE: char = '2';
+const EXEC: char = '1';
+
 /// Wrapper for errors from List command
 type Result<T> = result::Result<T, Box<dyn error::Error>>;
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Default)]
 pub struct ListArgs {
     /// Directory to print
     //  feature: print contents of multiple given dirs
@@ -44,7 +53,7 @@ pub struct ListArgs {
 }
 
 impl ListArgs {
-    /// run is the entry point into the command; runs the internal list method to perform the operation
+    /// The entry point into the command; runs the internal list method to perform the operation
     /// If any errors occur, they get returned immediately for run to handle/unwrap
     pub fn run(&self) {
         match self.list() {
@@ -53,6 +62,7 @@ impl ListArgs {
         }
     }
 
+    /// Private function that holds the logic for list
     fn list(&self) -> Result<String> {
         // Read the contents of the given directory.
         // Borrow the value from self, so it doesn't get moved into read_dir
@@ -70,18 +80,7 @@ impl ListArgs {
             self.remove_hidden_files(&mut entries)
         }
 
-        let mut contents = Vec::new();
-        // Error: Vec<OsString> cannot be used with template.
-        // So we convert each OsString into String and push all valid strings
-        // into file_names, which gives us the Vec<String> we need for template.
-        for entry in entries {
-            if let Ok(name) = entry
-                .file_name()
-                .into_string()
-            {
-                contents.push(name)
-            }
-        }
+        let mut contents = self.format(&mut entries);
 
         // Sort the results so we have a consistent output
         contents.sort();
@@ -95,7 +94,7 @@ impl ListArgs {
     /// Filters out the hidden entries from the result.
     /// Hidden files are determined by examining each entry's filename;
     /// if the first character is a '.', it is removed by retain().
-    // The first byte of the file name is compared to the byte representation 
+    // The first byte of the file name is compared to the byte representation
     // of '.' since this how Rust deals with strings.
     // Comparing by bytes also ensures that converting the file name (OsString)
     // won't potentially error out as with to_string(), which fails if
@@ -112,15 +111,70 @@ impl ListArgs {
             }
         })
     }
+
+    /// Transforms each DirEntry into a string, formatting it according to the options set
+    fn format(&self, entries: &mut Vec<DirEntry>) -> Vec<String> {
+        let mut contents = Vec::new();
+        // Error: Vec<OsString> cannot be used with template.
+        // So we convert each OsString into String and push all valid strings
+        // into file_names, which gives us the Vec<String> we need for template.
+        for entry in entries {
+            if self.long {
+                if let Ok(metadata) = entry.metadata() {
+                    let file_type = {
+                        if metadata.is_dir() {
+                            "d"
+                        } else {
+                            "-"
+                        }
+                    };
+
+                    let perms = metadata.permissions().mode() & 0o777;
+                    let nums = perms.to_string();
+
+                    let mut perm_set = String::new();
+                    for n in nums.chars() {
+                        match n {
+                            RWX => write!(&mut perm_set, "rwx"),
+                            RW => "rw-",
+                            RX => "r-x",
+                            READ => "r--",
+                            WX => "-wx",
+                            WRITE => "-w-",
+                            EXEC => "--x",
+                            _ => continue,
+                        }
+                    }
+
+                    let long_entry = format!("{} {} {}", file_type, perms, file_name);
+                    contents.push(long_entry);
+                }
+            } else if let Ok(name) = entry
+                .file_name()
+                .into_string()
+            {
+                contents.push(name);
+            }
+        }
+
+        contents
+    }
 }
+
+// fn symbolic_perms(perm: Permission) -> String {
+//     let nums: Vec<char> = perm
+//         .to_string()
+//         .chars()
+//         .map(|n| {});
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn list_curr_dir() {
-        let args = default_args();
+    fn list_dir() {
+        let args = default();
         assert_eq!(
             "hello.txt\nworld.txt\n",
             args.list().unwrap()
@@ -128,8 +182,8 @@ mod tests {
     }
 
     #[test]
-    fn list_curr_dir_hidden() {
-        let mut args = default_args();
+    fn list_dir_hidden() {
+        let mut args = default();
         args.all = true;
         assert_eq!(
             ".hidden\n.no\nhello.txt\nworld.txt\n",
@@ -137,15 +191,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn list_dir_long() {
+        let mut args = default();
+        args.long = true;
+        assert_eq!("here", args.list().unwrap())
+    }
+
     // helper function to create default args that tests will use and
     // modify as needed
-    fn default_args() -> ListArgs {
+    fn default() -> ListArgs {
         ListArgs {
             dir: String::from("./resources/testing/ls-test-dir"),
-            all: false,
-            dirs: false,
-            long: false,
-            columns: false,
+            ..Default::default()
         }
     }
 }
